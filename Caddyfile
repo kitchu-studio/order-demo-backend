@@ -1,0 +1,6 @@
+# Caddy gets and renews HTTPS certificates automatically when DOMAIN is a real domain
+# pointing at this server. With DOMAIN=localhost it serves a local self-signed cert.
+{$DOMAIN:localhost} {
+	encode gzip
+	reverse_proxy api:8080
+}

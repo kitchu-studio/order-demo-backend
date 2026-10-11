@@ -1,0 +1,9 @@
+# Local development only: also publish the API on plain HTTP port 8080 so the
+# Flutter app (Android emulator -> http://10.0.2.2:8080) can reach it without
+# trusting Caddy's self-signed certificate. Never use this file on a real server.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+services:
+  api:
+    ports:
+      - "8080:8080"

@@ -1,0 +1,52 @@
+# Manual deploy to the customer's EC2 (build image -> ECR -> run on server via SSM).
+# No SSH needed. Fill the repository Variables/Secrets listed in README before running.
+name: Deploy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write # for AWS OIDC
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        id: image
+        run: |
+          IMAGE="${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "uri=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy on EC2 via SSM
+        run: |
+          aws ssm send-command \
+            --instance-ids "${{ vars.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "deploy ${GITHUB_SHA}" \
+            --parameters 'commands=[
+              "set -e",
+              "cd /opt/app",
+              "aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.ecr.outputs.registry }}",
+              "sed -i \"/^API_IMAGE=/d\" .env && echo API_IMAGE=${{ steps.image.outputs.uri }} >> .env",
+              "docker compose pull api",
+              "docker compose up -d",
+              "docker image prune -f"
+            ]'
